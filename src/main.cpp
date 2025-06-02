@@ -50,6 +50,8 @@ void mySetup()
   // lv_demo_widgets();
 
   // Initialisations générales
+  pinMode(D10, OUTPUT);
+  digitalWrite(D10, 0);
   testLvgl();
 }
 
@@ -61,16 +63,18 @@ void loop()
 void myTask(void *pvParameters)
 {
   // Init
+  int gache = 0;
   TickType_t xLastWakeTime;
   // Lecture du nombre de ticks quand la tâche débute
   xLastWakeTime = xTaskGetTickCount();
   while (1)
   {
     // Loop
-
+    gache = !gache;
+    digitalWrite(D10, gache);
     // Endort la tâche pendant le temps restant par rapport au réveil,
     // ici 200ms, donc la tâche s'effectue toutes les 200ms
-    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200)); // toutes les 200 ms
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(3000)); // toutes les 200 ms
   }
 }
 
