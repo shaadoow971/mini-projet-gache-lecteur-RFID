@@ -1,4 +1,10 @@
 #include "lvgl.h"
+#include "wire.h"
+#include "MFRC522_I2C.h"
+
+#define RST_PIN 6 // Arduino UNO Pin
+
+MFRC522_I2C mfrc522(0x28, NC);
 
 static void event_handler(lv_event_t * e)
 {
@@ -41,23 +47,19 @@ void testLvgl()
 
 #include "lvglDrivers.h"
 
-// à décommenter pour tester la démo
-// #include "demos/lv_demos.h"
-
 void mySetup()
 {
-  // à décommenter pour tester la démo
-  // lv_demo_widgets();
-
-  // Initialisations générales
   pinMode(D10, OUTPUT);
   digitalWrite(D10, 0);
   testLvgl();
+  Wire.begin();  // Wire init, adding the I2C bus.  
+  mfrc522.PCD_Init(); 
+  Serial.begin(115200);
 }
 
 void loop()
 {
-  // Inactif (pour mise en veille du processeur)
+
 }
 
 void myTask(void *pvParameters)
@@ -72,9 +74,19 @@ void myTask(void *pvParameters)
     // Loop
     gache = !gache;
     digitalWrite(D10, gache);
-    // Endort la tâche pendant le temps restant par rapport au réveil,
-    // ici 200ms, donc la tâche s'effectue toutes les 200ms
-    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(3000)); // toutes les 200 ms
+
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {  
+      // Rien
+    }
+    else
+    {
+      for (byte i = 0; i < mfrc522.uid.size; i++) {
+        Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
+        Serial.print(mfrc522.uid.uidByte[i], HEX);
+      }
+    }
+
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200)); // toutes les 200 ms
   }
 }
 
