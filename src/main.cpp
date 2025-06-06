@@ -1,113 +1,136 @@
 #include "lvgl.h"
-#include "wire.h"
+#include "Wire.h"
 #include "MFRC522_I2C.h"
 
-#define RST_PIN 6 // Arduino UNO Pin
+// Définitions des broches
+#define RST_PIN 6 
+#define GACHE_PIN D10 // Broche pour la gâche
 
-MFRC522_I2C mfrc522(0x28, NC);
+MFRC522_I2C mfrc522(0x28, RST_PIN);
 
-static void event_handler(lv_event_t * e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
+// Label LVGL
+lv_obj_t * main_label;
 
-    if(code == LV_EVENT_CLICKED) {
-        LV_LOG_USER("Clicked");
+// --- UID des badges connus ---
+const byte BADGE1_UID[] = {10, 242, 99, 154}; 
+const int BADGE1_UID_SIZE = sizeof(BADGE1_UID);
+
+const byte BADGE2_UID[] = {26, 162, 156, 154};
+const int BADGE2_UID_SIZE = sizeof(BADGE2_UID);
+
+const byte BADGE3_UID[] = {233, 68, 32, 122};
+const int BADGE3_UID_SIZE = sizeof(BADGE3_UID);
+
+// Compare deux UID
+bool compareUids(byte *uid1, byte *uid2, int size) {
+    if (size != mfrc522.uid.size) return false;
+    for (int i = 0; i < size; i++) {
+        if (uid1[i] != uid2[i]) return false;
     }
-    else if(code == LV_EVENT_VALUE_CHANGED) {
-        LV_LOG_USER("Toggled");
+    return true;
+}
+
+// Met à jour le texte
+void updateLvglText(const char * text) {
+    if (main_label) {
+        lv_label_set_text(main_label, text);
+        lv_obj_center(main_label);
     }
 }
 
-void testLvgl()
-{
-  // Initialisations générales
-  lv_obj_t * label;
-
-  lv_obj_t * btn1 = lv_button_create(lv_screen_active());
-  lv_obj_add_event_cb(btn1, event_handler, LV_EVENT_ALL, NULL);
-  lv_obj_align(btn1, LV_ALIGN_CENTER, 0, -40);
-  lv_obj_remove_flag(btn1, LV_OBJ_FLAG_PRESS_LOCK);
-
-  label = lv_label_create(btn1);
-  lv_label_set_text(label, "Button");
-  lv_obj_center(label);
-
-  lv_obj_t * btn2 = lv_button_create(lv_screen_active());
-  lv_obj_add_event_cb(btn2, event_handler, LV_EVENT_ALL, NULL);
-  lv_obj_align(btn2, LV_ALIGN_CENTER, 0, 40);
-  lv_obj_add_flag(btn2, LV_OBJ_FLAG_CHECKABLE);
-  lv_obj_set_height(btn2, LV_SIZE_CONTENT);
-
-  label = lv_label_create(btn2);
-  lv_label_set_text(label, "Toggle");
-  lv_obj_center(label);
+// UI LVGL
+void testLvgl() {
+    main_label = lv_label_create(lv_screen_active());
+    lv_label_set_text(main_label, "Approchez un badge RFID");
+    lv_obj_center(main_label);
 }
 
-#ifdef ARDUINO
+#ifdef ARDUINO 
 
 #include "lvglDrivers.h"
 
-void mySetup()
-{
-  pinMode(D10, OUTPUT);
-  digitalWrite(D10, 0);
-  testLvgl();
-  Wire.begin();  // Wire init, adding the I2C bus.  
-  mfrc522.PCD_Init(); 
-  Serial.begin(115200);
+void mySetup() {
+    pinMode(GACHE_PIN, OUTPUT);
+    digitalWrite(GACHE_PIN, LOW); // Gâche ouverte par défaut
+
+    testLvgl();
+
+    Wire.begin();
+    mfrc522.PCD_Init();
+    Serial.begin(115200);
+    Serial.println("Système prêt. Approchez un badge.");
+
+    xTaskCreate(
+        myTask,
+        "Main Task",
+        4096,
+        NULL,
+        1,
+        NULL
+    );
 }
 
-void loop()
-{
-
+void loop() {
+    // Géré par FreeRTOS
 }
 
-void myTask(void *pvParameters)
-{
-  // Init
-  int gache = 0;
-  TickType_t xLastWakeTime;
-  // Lecture du nombre de ticks quand la tâche débute
-  xLastWakeTime = xTaskGetTickCount();
-  while (1)
-  {
-    // Loop
-    gache = !gache;
-    digitalWrite(D10, gache);
+void myTask(void *pvParameters) {
+    TickType_t xLastWakeTime = xTaskGetTickCount(); 
+    const TickType_t RFID_POLLING_INTERVAL_MS = 200;
 
-    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {  
-      // Rien
+    while (1) {
+        if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+            Serial.print("Badge lu : ");
+            for (byte i = 0; i < mfrc522.uid.size; i++) {
+                Serial.print(mfrc522.uid.uidByte[i]);
+                Serial.print(' ');
+            }
+            Serial.println(); 
+
+            if (compareUids(mfrc522.uid.uidByte, (byte*)BADGE1_UID, BADGE1_UID_SIZE)) {
+                Serial.println("Badge 1 détecté : GAGNER !");
+                updateLvglText("GAGNER !");
+                
+                digitalWrite(GACHE_PIN, HIGH); // Ferme la gâche
+                vTaskDelay(pdMS_TO_TICKS(3000));
+                digitalWrite(GACHE_PIN, LOW);  // Rouvre la gâche
+            } 
+            else if (compareUids(mfrc522.uid.uidByte, (byte*)BADGE2_UID, BADGE2_UID_SIZE)) {
+                Serial.println("Badge 2 détecté : PERDU !");
+                updateLvglText("PERDU !");
+            } 
+            else if (compareUids(mfrc522.uid.uidByte, (byte*)BADGE3_UID, BADGE3_UID_SIZE)) {
+                Serial.println("Badge 3 détecté : PERDU !");
+                updateLvglText("PERDU T'ES NUL !");
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(1000)); // Attente avant de réinitialiser le message
+            updateLvglText("Approchez un badge RFID");
+
+            mfrc522.PICC_HaltA();
+        }
+
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(RFID_POLLING_INTERVAL_MS));
     }
-    else
-    {
-      for (byte i = 0; i < mfrc522.uid.size; i++) {
-        Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
-        Serial.print(mfrc522.uid.uidByte[i], HEX);
-      }
-    }
-
-    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(200)); // toutes les 200 ms
-  }
 }
 
-#else
+#else // Simulateur PC
 
 #include "lvgl.h"
 #include "app_hal.h"
 #include <cstdio>
 
-int main(void)
-{
-  printf("LVGL Simulator\n");
-  fflush(stdout);
+int main(void) {
+    printf("LVGL Simulateur\n");
+    fflush(stdout);
 
-  lv_init();
-  hal_setup();
+    lv_init();
+    hal_setup();
 
-  testLvgl();
+    testLvgl();
 
-  hal_loop();
-  return 0;
+    hal_loop();
+    return 0;
 }
 
 #endif
