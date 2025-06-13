@@ -161,6 +161,7 @@ void myTask(void *pvParameters) {
                 message = "Badge inconnu !";
                 Serial.println(message);
                 updateLvglText(message);
+                digitalWrite(GACHE_PIN, LOW);
             }
 
             // Délai pour afficher le message sur LVGL avant de revenir à l'écran par défaut
